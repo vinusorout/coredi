@@ -180,10 +180,96 @@ app.UseMiddleware<CustomMiddleware>();
 ```c#
  services.RemoveAll<IService>();
 ```
+
+### Multiple Services registrations
+ * Let say we have multiple validator for a model which implements same interface IValidate
+ * We will register all the validators to startup and the while getting the instances in main method we will use IEnumrable, which will give list of all the instances registered with IValidate
+
+```c#
+ services.AddTransient<IValidate, ValidateName>();
+ services.AddTransient<IValidate, ValidateAddress>();
  
+ // mai validator class using all the Validations
+ public class CreditValidator : ICreditValidator
+  {
+      private readonly IEnumerable<IValidate> _validations;
+      public CreditValidator(IEnumerable<IValidate> validations)
+      {
+          _validations = validations;
+      }
+
+      public async Task<(bool, IEnumerable<string>)> PassAllValidations(CreditApplication model)
+      {
+          bool validationsPassed = true;
+
+          List<string> errorMessages = new List<string>();
+
+          foreach(var validation in _validations)
+          {
+              if (!validation.ValidatorLogic(model))
+              {
+                  //Error
+                  errorMessages.Add(validation.ErrorMessage);
+                  validationsPassed = false;
+              }
+          }
+
+          return (validationsPassed, errorMessages);
+      }
+  }
+```
  
+Second way to add ienumerable services
+```c#
+ services.TryAddEnumerable(new[] {
+   ServiceDescriptor.Scoped<IValidate, ValidateName>(),
+   ServiceDescriptor.Scoped<IValidate, ValidateAddress>()
+ });
+```
  
+### Conditional Registration
+
+```c#
+ services.AddScoped<CreditApprovedHigh>();
+ services.AddScoped<CreditApprovedLow>();
+
+ services.AddScoped<Func<CreditApprovedEnum, ICreditApproved>>(ServiceProvider => range =>
+ {
+     switch (range)
+     {
+         case CreditApprovedEnum.High: return ServiceProvider.GetService<CreditApprovedHigh>();
+         case CreditApprovedEnum.Low: return ServiceProvider.GetService<CreditApprovedLow>();
+         default: return ServiceProvider.GetService<CreditApprovedLow>();
+     }
+ });
  
+ // USE
+ [ValidateAntiForgeryToken]
+ [HttpPost]
+ [ActionName("CreditApplication")]
+ public async Task<IActionResult> CreditApplicationPOST(
+     [FromServices] Func<CreditApprovedEnum,ICreditApproved> _creditService
+     )
+ {
+    CreditModel.CreditApproved = _creditService(
+        CreditModel.Salary > 50000 ? 
+        CreditApprovedEnum.High : CreditApprovedEnum.Low
+        ).GetCreditApproved(CreditModel);
+ }
+```
+ 
+### ILogger
+ * No need to register
+ * ILogger<ControllerName> logger // Category name is same of Controller Name, this will default log to console
+ * For file and other type of logging install packages for ILoggerFactory
+
+### LIfetime Impo
+ * A service should not depend on a service with a lifetime shorter than its own.
+ * Means a singleton service cannot depend on Transient and Scoped lifetimed service
+ * Build error will be thrown
+ 
+![image](https://user-images.githubusercontent.com/27411868/132570505-e2ad5fe3-80e7-49ef-a25a-db1deff1fb8c.png)
+
  
  
  
